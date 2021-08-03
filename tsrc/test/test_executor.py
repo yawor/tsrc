@@ -1,8 +1,11 @@
+import random
+import time
+
 import cli_ui as ui
 import pytest
 
 from tsrc.errors import Error
-from tsrc.executor import ExecutorFailed, Task, run_sequence
+from tsrc.executor import ExecutorFailed, Task, run_parallel, run_sequence
 
 
 class Kaboom(Error):
@@ -31,11 +34,13 @@ class FakeTask(Task[str]):
         return item
 
     def process(self, index: int, count: int, item: str) -> None:
-        ui.info_count(index, count, "frobnicate", item)
+        # ui.info_count(index, count, "frobnicate", item)
+        to_sleep = random.randrange(5, 15)
+        time.sleep(to_sleep / 5)
         if item == "failing":
-            print("ko :/")
+            # print(item, "ko :/")
             raise Kaboom()
-        ui.info("ok !")
+        # ui.info(item, "ok !")
 
 
 def test_doing_nothing() -> None:
@@ -52,3 +57,14 @@ def test_collect_errors() -> None:
     task = FakeTask()
     with pytest.raises(ExecutorFailed):
         run_sequence(["foo", "failing", "bar"], task)
+
+
+def test_parallel_happy() -> None:
+    task = FakeTask()
+    run_parallel(["foo", "bar", "baz", "quux"], task, max_workers=2)
+
+
+def test_parallel_sad() -> None:
+    task = FakeTask()
+    with pytest.raises(ExecutorFailed):
+        run_parallel(["foo", "bar", "failing", "baz", "quux"], task, max_workers=2)
