@@ -2,7 +2,6 @@
 
 import argparse
 import collections
-import shutil
 from typing import Dict, List, Optional, Tuple, Union
 
 import cli_ui as ui
@@ -18,6 +17,7 @@ from tsrc.git import GitStatus, get_git_status
 from tsrc.manifest import Manifest
 from tsrc.repo import Repo
 from tsrc.workspace import Workspace
+from tsrc.utils import erase_last_line
 
 
 def configure_parser(subparser: argparse._SubParsersAction) -> None:
@@ -81,11 +81,6 @@ def describe_status(status: StatusOrError) -> List[ui.Token]:
     git_status = status.git.describe()
     manifest_status = status.manifest.describe()
     return git_status + manifest_status
-
-
-def erase_last_line() -> None:
-    terminal_size = shutil.get_terminal_size()
-    ui.info(" " * terminal_size.columns, end="\r")
 
 
 class StatusCollector(Task[Repo]):
