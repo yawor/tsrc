@@ -10,6 +10,7 @@ from tsrc.groups import GroupNotFound
 from tsrc.test.helpers.cli import CLI
 from tsrc.test.helpers.git_server import GitServer
 from tsrc.workspace.config import WorkspaceConfig
+from tsrc.workspace import SyncError
 
 
 def test_sync_happy(tsrc_cli: CLI, git_server: GitServer, workspace_path: Path) -> None:
@@ -56,10 +57,7 @@ def test_sync_with_errors(
     foo_src = workspace_path / "foo"
     (foo_src / "conflict.txt").write_text("this is green")
 
-    tsrc_cli.run_and_fail("sync")
-
-    assert message_recorder.find("Failed to synchronize workspace")
-    assert message_recorder.find(r"\* foo")
+    tsrc_cli.run_and_fail_with(SyncError, "sync")
 
 
 def test_sync_finds_root(

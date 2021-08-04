@@ -81,13 +81,23 @@ class Workspace:
             remote_name=self.config.singular_remote,
         )
         ui.info_2("Cloning missing repos")
-        run_sequence(to_clone, cloner)
+        errors = run_sequence(to_clone, cloner)
+        if errors:
+            ui.error("Could not clone the following repos:")
+            for repo, error in errors:
+                ui.info(ui.green, "*", ui.reset, repo.dest, ":", error)
+            raise ClonerError()
 
     def set_remotes(self) -> None:
         if not self.config.singular_remote:
             ui.info_2("Configuring remotes")
             remote_setter = RemoteSetter(self.root_path)
-            run_sequence(self.repos, remote_setter)
+            errors = run_sequence(self.repos, remote_setter)
+            if errors:
+                ui.error("Failed to configure remotes the following repos:")
+                for repo, error in errors:
+                    ui.info(ui.green, "*", ui.reset, repo.dest, ":", error)
+                    raise RemoteSetterError()
 
     def perform_filesystem_operations(
         self, manifest: Optional[Manifest] = None
@@ -101,24 +111,49 @@ class Workspace:
         operations = [x for x in operations if x.repo in known_repos]  # type: ignore
         if operations:
             ui.info_2("Performing filesystem operations")
-            run_sequence(operations, operator)
+            errors = run_sequence(operations, operator)
+            if errors:
+                ui.error("Failed to perform the following operations:")
+                for item, error in errors:
+                    ui.info(ui.green, "*", ui.reset, item, error)
+                raise FileSystemOperatorError()
 
     def sync(self, *, force: bool = False) -> None:
         syncer = Syncer(
             self.root_path, force=force, remote_name=self.config.singular_remote
         )
         repos = self.repos
-        try:
-            ui.info_1("Synchronizing workspace")
-            run_sequence(repos, syncer)
-        finally:
-            syncer.display_bad_branches()
+        ui.info_1("Synchronizing workspace")
+        errors = run_sequence(repos, syncer)
+        if errors:
+            ui.error("Could not synchronize the following repos:")
+            for repo, error in errors:
+                ui.info(ui.green, "*", ui.reset, repo.dest, ":", error)
+        syncer.display_bad_branches()
+        if errors:
+            raise SyncError()
 
     def enumerate_repos(self) -> Iterable[Tuple[int, Repo, Path]]:
         """Yield (index, repo, full_path) for all the repos"""
         for i, repo in enumerate(self.repos):
             full_path = self.root_path / repo.dest
             yield (i, repo, full_path)
+
+
+class ClonerError(Error):
+    pass
+
+
+class SyncError(Error):
+    pass
+
+
+class FileSystemOperatorError(Error):
+    pass
+
+
+class RemoteSetterError(Error):
+    pass
 
 
 class WorkspaceNotConfigured(Error):

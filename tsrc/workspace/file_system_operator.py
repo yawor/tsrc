@@ -19,12 +19,6 @@ class FileSystemOperator(Task[FileSystemOperation]):
         self.workspace_path = workspace_path
         self.repos = repos
 
-    def on_failure(self, *, num_errors: int) -> None:
-        ui.error("Failed to perform the following operations:")
-
-    def display_item(self, item: FileSystemOperation) -> str:
-        return str(item)
-
     def process(self, index: int, count: int, item: FileSystemOperation) -> None:
         ui.info_count(index, count, item)
         try:

@@ -34,12 +34,6 @@ class Syncer(Task[Repo]):
         self.force = force
         self.remote_name = remote_name
 
-    def on_failure(self, *, num_errors: int) -> None:
-        ui.error("Failed to synchronize workspace")
-
-    def display_item(self, repo: Repo) -> str:
-        return repo.dest
-
     def process(self, index: int, count: int, repo: Repo) -> None:
         """Synchronize a repo given its configuration in the manifest.
 

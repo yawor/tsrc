@@ -84,8 +84,14 @@ def run(args: argparse.Namespace) -> None:
     cmd_runner = CmdRunner(workspace.root_path, command, description, shell=shell)
     repos = workspace.repos
     ui.info_1(f"Running `{description}` on {len(repos)} repos")
-    run_sequence(repos, cmd_runner)
-    ui.info("OK", ui.check)
+    errors = run_sequence(repos, cmd_runner)
+    if errors:
+        ui.error(f"Command failed for {len(errors)} repo(s)")
+        for (repo, _) in errors:
+            ui.info(ui.green, "*", ui.reset, repo.dest)
+        raise ForeachError()
+    else:
+        ui.info("OK", ui.check)
 
 
 class CommandFailed(Error):
@@ -93,6 +99,10 @@ class CommandFailed(Error):
 
 
 class CouldNotStartProcess(Error):
+    pass
+
+
+class ForeachError(Error):
     pass
 
 
@@ -114,12 +124,6 @@ class CmdRunner(Task[Repo]):
         self.shell = shell
         workspace = Workspace(workspace_path)
         self.env_setter = EnvSetter(workspace)
-
-    def display_item(self, repo: Repo) -> str:
-        return repo.dest
-
-    def on_failure(self, *, num_errors: int) -> None:
-        ui.error(f"Command failed for {num_errors} repo(s)")
 
     def process(self, index: int, count: int, repo: Repo) -> None:
         ui.info_count(index, count, repo.dest)

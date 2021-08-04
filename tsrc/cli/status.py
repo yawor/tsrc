@@ -31,8 +31,19 @@ def run(args: argparse.Namespace) -> None:
     workspace = get_workspace_with_repos(args)
     status_collector = StatusCollector(workspace)
     repos = workspace.repos
+    if not repos:
+        ui.info_2("Workspace is empty")
+        return
     ui.info_1(f"Collecting statuses of {len(repos)} repo(s)")
     run_sequence(repos, status_collector)
+    erase_last_line()
+    ui.info_2("Workspace status:")
+    statuses = status_collector.statuses
+    max_dest = max(len(x) for x in statuses.keys())
+    for dest, status in statuses.items():
+        message = [ui.green, "*", ui.reset, dest.ljust(max_dest)]
+        message += describe_status(status)
+        ui.info(*message)
 
 
 class ManifestStatus:
@@ -95,9 +106,6 @@ class StatusCollector(Task[Repo]):
         self.manifest = workspace.get_manifest()
         self.statuses: CollectedStatuses = collections.OrderedDict()
 
-    def display_item(self, repo: Repo) -> str:
-        return repo.dest
-
     def process(self, index: int, total: int, repo: Repo) -> None:
         ui.info_count(index, total, repo.dest, end="\r")
         full_path = self.workspace.root_path / repo.dest
@@ -115,15 +123,3 @@ class StatusCollector(Task[Repo]):
         except Exception as e:
             self.statuses[repo.dest] = e
         erase_last_line()
-
-    def on_success(self) -> None:
-        erase_last_line()
-        if not self.statuses:
-            ui.info_2("Workspace is empty")
-            return
-        ui.info_2("Workspace status:")
-        max_dest = max(len(x) for x in self.statuses.keys())
-        for dest, status in self.statuses.items():
-            message = [ui.green, "*", ui.reset, dest.ljust(max_dest)]
-            message += describe_status(status)
-            ui.info(*message)

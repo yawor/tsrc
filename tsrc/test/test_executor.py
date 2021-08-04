@@ -1,11 +1,8 @@
 import random
 import time
 
-import cli_ui as ui
-import pytest
-
 from tsrc.errors import Error
-from tsrc.executor import ExecutorFailed, Task, run_parallel, run_sequence
+from tsrc.executor import Task, run_parallel, run_sequence
 
 
 class Kaboom(Error):
@@ -24,12 +21,6 @@ class FakeTask(Task[str]):
     def __init__(self) -> None:
         pass
 
-    def on_failure(self, *, num_errors: int) -> None:
-        ui.error("Failed to frobnicate some items")
-
-    def display_item(self, item: str) -> str:
-        return item
-
     def process(self, index: int, count: int, item: str) -> None:
         # ui.info_count(index, count, "frobnicate", item)
         to_sleep = random.randrange(5, 15)
@@ -47,21 +38,29 @@ def test_doing_nothing() -> None:
 
 def test_happy() -> None:
     task = FakeTask()
-    run_sequence(["foo", "bar"], task)
+    errors = run_sequence(["foo", "bar"], task)
+    assert not errors
 
 
 def test_collect_errors() -> None:
     task = FakeTask()
-    with pytest.raises(ExecutorFailed):
-        run_sequence(["foo", "failing", "bar"], task)
+    errors = run_sequence(["foo", "failing", "bar"], task)
+    assert len(errors) == 1
+    item, error = errors[0]
+    assert item == "failing"
+    assert str(error) == "Kaboom"
 
 
 def test_parallel_happy() -> None:
     task = FakeTask()
-    run_parallel(["foo", "bar", "baz", "quux"], task, max_workers=2)
+    errors = run_parallel(["foo", "bar", "baz", "quux"], task, max_workers=2)
+    assert not errors
 
 
 def test_parallel_sad() -> None:
     task = FakeTask()
-    with pytest.raises(ExecutorFailed):
-        run_parallel(["foo", "bar", "failing", "baz", "quux"], task, max_workers=2)
+    errors = run_parallel(["foo", "bar", "failing", "baz", "quux"], task, max_workers=2)
+    assert len(errors) == 1
+    item, error = errors[0]
+    assert item == "failing"
+    assert str(error) == "Kaboom"
