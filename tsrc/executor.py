@@ -29,8 +29,8 @@ class Task(Generic[T], metaclass=abc.ABCMeta):
         Daughter classes should override this method to provide the code
         that processes the item.
 
-        It's advised (but not required) to call `ui.info_count(index, count)` at
-        the beginning of the overwritten method.
+        It should *not* display anything to stdout/stderr in order to be used
+        equally by the ParallelExecutor and SequentialExecutor
         """
         pass
 
