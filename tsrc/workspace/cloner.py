@@ -1,12 +1,11 @@
 import textwrap
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 import cli_ui as ui
 
 from tsrc.errors import Error
 from tsrc.executor import Task
-from tsrc.git import run_git
 from tsrc.repo import Remote, Repo
 
 
@@ -23,6 +22,15 @@ class Cloner(Task[Repo]):
         self.workspace_path = workspace_path
         self.shallow = shallow
         self.remote_name = remote_name
+
+    def describe_process_start(self, item: Repo) -> List[ui.Token]:
+        return ["Cloning", item.dest]
+
+    def describe_process_end(self, item: Repo) -> List[ui.Token]:
+        return [ui.green, "ok", ui.reset, item.dest]
+
+    def describe_item(self, item: Repo) -> str:
+        return item.dest
 
     def check_shallow_with_sha1(self, repo: Repo) -> None:
         if not repo.sha1:
@@ -73,7 +81,7 @@ class Cloner(Task[Repo]):
         clone_args.append("--recurse-submodules")
         clone_args.append(name)
         try:
-            run_git(parent, *clone_args)
+            self.run_git(parent, *clone_args)
         except Error:
             raise Error("Cloning failed")
 
@@ -81,14 +89,14 @@ class Cloner(Task[Repo]):
         repo_path = self.workspace_path / repo.dest
         ref = repo.sha1
         if ref:
-            ui.info_2("Resetting", repo.dest, "to", ref)
+            self.info_2("Resetting", repo.dest, "to", ref)
             try:
-                run_git(repo_path, "reset", "--hard", ref)
+                self.run_git(repo_path, "reset", "--hard", ref)
             except Error:
                 raise Error("Resetting to", ref, "failed")
 
     def process(self, index: int, count: int, repo: Repo) -> None:
-        ui.info_count(index, count, repo.dest)
+        self.info_count(index, count, "Cloning", repo.dest)
         self.check_shallow_with_sha1(repo)
         self.clone_repo(repo)
         self.reset_repo(repo)

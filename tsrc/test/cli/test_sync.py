@@ -9,8 +9,8 @@ from tsrc.git import get_sha1, run_git, run_git_captured
 from tsrc.groups import GroupNotFound
 from tsrc.test.helpers.cli import CLI
 from tsrc.test.helpers.git_server import GitServer
-from tsrc.workspace.config import WorkspaceConfig
 from tsrc.workspace import SyncError
+from tsrc.workspace.config import WorkspaceConfig
 
 
 def test_sync_happy(tsrc_cli: CLI, git_server: GitServer, workspace_path: Path) -> None:
@@ -31,6 +31,30 @@ def test_sync_happy(tsrc_cli: CLI, git_server: GitServer, workspace_path: Path) 
 
     new_txt_path = workspace_path / "foo/new.txt"
     assert new_txt_path.exists(), "foo should have been updated"
+
+
+def test_sync_parallel(
+    tsrc_cli: CLI, git_server: GitServer, workspace_path: Path
+) -> None:
+    """
+    Run `tsrc` with 2 jobs on three repos, two of which have changed
+
+    This is useful to check tsrc output when running tasks in parallel
+    """
+    git_server.add_repo("foo")
+    git_server.add_repo("bar")
+    git_server.add_repo("baz")
+    manifest_url = git_server.manifest_url
+
+    tsrc_cli.run("init", manifest_url, "-j", "2")
+
+    baz_path = workspace_path / "baz"
+    run_git(baz_path, "remote", "set-url", "origin", "other@domain.tld/baz")
+    git_server.push_file("foo", "foo.txt")
+    git_server.push_file("bar", "bar1")
+    git_server.push_file("bar", "bar2", contents="two\nlines\n")
+
+    tsrc_cli.run("sync", "-j", "2")
 
 
 def test_sync_with_errors(
@@ -574,15 +598,16 @@ def test_fetch_additional_remotes(
     * Check that the second remote was fetched
     """
     git_server.add_repo("foo")
-    foo2_url = git_server.add_repo("foo2")
+    foo2_url = git_server.add_repo("foo2", add_to_manifest=False)
     git_server.manifest.set_repo_remotes("foo", [("other", foo2_url)])
 
     tsrc_cli.run("init", git_server.manifest_url)
     foo_path = workspace_path / "foo"
     first_sha1 = get_sha1(foo_path, ref="other/master")
     git_server.push_file("foo2", "new.txt")
+    foo_path = workspace_path / "foo"
 
-    tsrc_cli.run("sync")
+    tsrc_cli.run("sync", "-j", "2")
     second_sha1 = get_sha1(foo_path, ref="other/master")
 
     assert first_sha1 != second_sha1, "remote 'other' was not fetched"
@@ -600,7 +625,7 @@ def test_adding_remotes(
     """
     git_server.add_repo("foo")
     tsrc_cli.run("init", git_server.manifest_url)
-    foo2_url = git_server.add_repo("foo2")
+    foo2_url = git_server.add_repo("foo2", add_to_manifest=False)
     git_server.manifest.set_repo_remotes("foo", [("other", foo2_url)])
 
     tsrc_cli.run("sync")
@@ -622,7 +647,7 @@ def test_changing_remote_url(
     git_server.add_repo("foo")
     tsrc_cli.run("init", git_server.manifest_url)
 
-    foo2_url = git_server.add_repo("foo2")
+    foo2_url = git_server.add_repo("foo2", add_to_manifest=False)
     git_server.manifest.set_repo_url("foo", foo2_url)
     tsrc_cli.run("sync")
 

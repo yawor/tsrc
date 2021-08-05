@@ -52,6 +52,22 @@ def test_foreach_happy(
     assert message_recorder.find("`ls`")
 
 
+def test_foreach_parallel(
+    tsrc_cli: CLI, git_server: GitServer, message_recorder: MessageRecorder
+) -> None:
+    """Scenario:
+    * Create two repos
+    * Check that `tsrc foreach ls` works
+    * Check that the string `ls` is printed
+    """
+    git_server.add_repo("foo")
+    git_server.add_repo("spam")
+    manifest_url = git_server.manifest_url
+    tsrc_cli.run("init", manifest_url)
+    tsrc_cli.run("foreach", "-j", "auto", "ls")
+    assert message_recorder.find("`ls`")
+
+
 def test_foreach_shell(
     tsrc_cli: CLI, git_server: GitServer, message_recorder: MessageRecorder
 ) -> None:
@@ -92,10 +108,10 @@ def test_foreach_with_explicit_groups(
     message_recorder.reset()
     tsrc_cli.run("foreach", "-g", "foo", "--", "ls")
 
-    assert message_recorder.find("bar\n")
-    assert message_recorder.find("baz\n")
-    assert not message_recorder.find("eggs\n")
-    assert not message_recorder.find("other\n")
+    assert message_recorder.find("bar ")
+    assert message_recorder.find("baz ")
+    assert not message_recorder.find("eggs ")
+    assert not message_recorder.find("other ")
 
 
 def test_foreach_with_groups_from_config(
@@ -121,10 +137,10 @@ def test_foreach_with_groups_from_config(
     message_recorder.reset()
     tsrc_cli.run("foreach", "ls")
 
-    assert message_recorder.find("bar\n")
-    assert message_recorder.find("baz\n")
-    assert message_recorder.find("eggs\n")
-    assert not message_recorder.find("other\n")
+    assert message_recorder.find("bar ")
+    assert message_recorder.find("baz ")
+    assert message_recorder.find("eggs ")
+    assert not message_recorder.find("other ")
 
 
 def test_foreach_error_when_using_missing_groups(
@@ -174,11 +190,11 @@ def test_foreach_with_all_cloned_repos_requested(
 
     tsrc_cli.run("foreach", "--all-cloned", "ls")
 
-    assert message_recorder.find("bar\n")
-    assert message_recorder.find("baz\n")
-    assert message_recorder.find("eggs\n")
-    assert message_recorder.find("bacon\n")
-    assert message_recorder.find("quux\n")
+    assert message_recorder.find("bar ")
+    assert message_recorder.find("baz ")
+    assert message_recorder.find("eggs ")
+    assert message_recorder.find("bacon ")
+    assert message_recorder.find("quux ")
 
 
 def test_cannot_start_cmd(tsrc_cli: CLI, git_server: GitServer) -> None:

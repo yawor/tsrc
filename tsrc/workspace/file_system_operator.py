@@ -19,9 +19,21 @@ class FileSystemOperator(Task[FileSystemOperation]):
         self.workspace_path = workspace_path
         self.repos = repos
 
-    def process(self, index: int, count: int, item: FileSystemOperation) -> None:
-        ui.info_count(index, count, item)
+    def describe_item(self, item: FileSystemOperation) -> str:
+        return str(item)
+
+    def describe_process_start(self, item: FileSystemOperation) -> List[ui.Token]:
+        return []
+
+    def describe_process_end(self, item: FileSystemOperation) -> List[ui.Token]:
+        return []
+
+    def process(
+        self, index: int, count: int, item: FileSystemOperation
+    ) -> List[ui.Token]:
+        self.info_count(index, count, str(item))
         try:
             item.perform(self.workspace_path)
         except OSError as e:
             raise Error(str(e))
+        return [item]

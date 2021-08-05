@@ -1,8 +1,9 @@
-import random
-import time
+from typing import List
+
+import cli_ui as ui
 
 from tsrc.errors import Error
-from tsrc.executor import Task, run_parallel, run_sequence
+from tsrc.executor import Task, process_items_parallel, process_items_sequence
 
 
 class Kaboom(Error):
@@ -21,46 +22,63 @@ class FakeTask(Task[str]):
     def __init__(self) -> None:
         pass
 
+    def describe_process_start(self, item: str) -> List[ui.Token]:
+        return ["Frobnicating", item]
+
+    def describe_process_end(self, item: str) -> List[ui.Token]:
+        return [item, "ok"]
+
     def process(self, index: int, count: int, item: str) -> None:
-        # ui.info_count(index, count, "frobnicate", item)
-        to_sleep = random.randrange(5, 15)
-        time.sleep(to_sleep / 5)
         if item == "failing":
-            # print(item, "ko :/")
             raise Kaboom()
-        # ui.info(item, "ok !")
+
+    def describe_item(self, item: str) -> str:
+        return item
 
 
-def test_doing_nothing() -> None:
+def test_sequence_nothing() -> None:
     task = FakeTask()
-    run_sequence([], task)
+    items: List[str] = []
+    outcome = process_items_sequence(items, task)
+    assert not outcome.summary
+    assert not outcome.errors
 
 
-def test_happy() -> None:
+def test_sequence_happy() -> None:
     task = FakeTask()
-    errors = run_sequence(["foo", "bar"], task)
-    assert not errors
+    outcome = process_items_sequence(["foo", "bar"], task)
+    assert not outcome.errors
 
 
-def test_collect_errors() -> None:
+def test_sequence_sad() -> None:
     task = FakeTask()
-    errors = run_sequence(["foo", "failing", "bar"], task)
+    outcome = process_items_sequence(["foo", "failing", "bar"], task)
+    errors = outcome.errors
     assert len(errors) == 1
-    item, error = errors[0]
-    assert item == "failing"
-    assert str(error) == "Kaboom"
+    assert errors["failing"] == "Kaboom"
+
+
+def test_parallel_nothing() -> None:
+    task = FakeTask()
+    items: List[str] = []
+    outcome = process_items_parallel(items, task, num_jobs=2)
+    assert not outcome.errors
+    assert not outcome.summary
 
 
 def test_parallel_happy() -> None:
     task = FakeTask()
-    errors = run_parallel(["foo", "bar", "baz", "quux"], task, max_workers=2)
-    assert not errors
+    ui.info("Frobnicating 4 items with two workers")
+    outcome = process_items_parallel(["foo", "bar", "baz", "quux"], task, num_jobs=2)
+    ui.info("Done")
+    assert not outcome.errors
 
 
 def test_parallel_sad() -> None:
     task = FakeTask()
-    errors = run_parallel(["foo", "bar", "failing", "baz", "quux"], task, max_workers=2)
+    outcome = process_items_parallel(
+        ["foo", "bar", "failing", "baz", "quux"], task, num_jobs=2
+    )
+    errors = outcome.errors
     assert len(errors) == 1
-    item, error = errors[0]
-    assert item == "failing"
-    assert str(error) == "Kaboom"
+    assert errors["failing"] == "Kaboom"

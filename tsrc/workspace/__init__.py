@@ -8,7 +8,7 @@ import cli_ui as ui
 import ruamel.yaml
 
 from tsrc.errors import Error
-from tsrc.executor import run_sequence
+from tsrc.executor import process_items, process_items_sequence
 from tsrc.manifest import Manifest
 from tsrc.repo import Repo
 from tsrc.workspace.cloner import Cloner
@@ -69,7 +69,7 @@ class Workspace:
         manifest_branch = self.config.manifest_branch
         self.local_manifest.update(url=manifest_url, branch=manifest_branch)
 
-    def clone_missing(self) -> None:
+    def clone_missing(self, *, num_jobs: Optional[int] = None) -> None:
         to_clone = []
         for repo in self.repos:
             repo_path = self.root_path / repo.dest
@@ -81,23 +81,28 @@ class Workspace:
             remote_name=self.config.singular_remote,
         )
         ui.info_2("Cloning missing repos")
-        errors = run_sequence(to_clone, cloner)
+        outcome = process_items(to_clone, cloner, num_jobs=num_jobs)
+        errors = outcome.errors
         if errors:
             ui.error("Could not clone the following repos:")
-            for repo, error in errors:
-                ui.info(ui.green, "*", ui.reset, repo.dest, ":", error)
+            for item, error in errors.items():
+                ui.info(ui.green, "*", ui.reset, item, ":", error)
             raise ClonerError()
 
-    def set_remotes(self) -> None:
+    def set_remotes(self, num_jobs: Optional[int] = None) -> None:
         if not self.config.singular_remote:
             ui.info_2("Configuring remotes")
             remote_setter = RemoteSetter(self.root_path)
-            errors = run_sequence(self.repos, remote_setter)
+            outcome = process_items(self.repos, remote_setter, num_jobs=num_jobs)
+            errors = outcome.errors
             if errors:
                 ui.error("Failed to configure remotes the following repos:")
-                for repo, error in errors:
-                    ui.info(ui.green, "*", ui.reset, repo.dest, ":", error)
+                for item, error in errors.items():
+                    ui.info(ui.green, "*", ui.reset, item, ":", error)
                     raise RemoteSetterError()
+            summary = outcome.summary
+            for _, tokens in summary.items():
+                ui.info(*tokens)
 
     def perform_filesystem_operations(
         self, manifest: Optional[Manifest] = None
@@ -111,24 +116,29 @@ class Workspace:
         operations = [x for x in operations if x.repo in known_repos]  # type: ignore
         if operations:
             ui.info_2("Performing filesystem operations")
-            errors = run_sequence(operations, operator)
+            outcome = process_items_sequence(operations, operator)
+            errors = outcome.errors
             if errors:
                 ui.error("Failed to perform the following operations:")
-                for item, error in errors:
+                for item, error in errors.items():
                     ui.info(ui.green, "*", ui.reset, item, error)
                 raise FileSystemOperatorError()
 
-    def sync(self, *, force: bool = False) -> None:
+    def sync(self, *, force: bool = False, num_jobs: Optional[int] = None) -> None:
         syncer = Syncer(
             self.root_path, force=force, remote_name=self.config.singular_remote
         )
         repos = self.repos
-        ui.info_1("Synchronizing workspace")
-        errors = run_sequence(repos, syncer)
+        ui.info_2("Synchronizing repos")
+        outcome = process_items(repos, syncer, num_jobs=num_jobs)
+        summary = outcome.summary
+        for _, tokens in summary.items():
+            ui.info(*tokens)
+        errors = outcome.errors
         if errors:
             ui.error("Could not synchronize the following repos:")
-            for repo, error in errors:
-                ui.info(ui.green, "*", ui.reset, repo.dest, ":", error)
+            for item, error in errors.items():
+                ui.info(ui.green, "*", ui.reset, item, ":", error)
         syncer.display_bad_branches()
         if errors:
             raise SyncError()
