@@ -79,7 +79,10 @@ class Syncer(Task[Repo]):
             if sync_summary:
                 summary_lines += sync_summary
 
-        self.update_submodules(repo)
+        submodule_line = self.update_submodules(repo)
+        if submodule_line:
+            summary_lines.append(submodule_line)
+
         summary = "\n".join(summary_lines)
         return Outcome(error=error, summary=summary)
 
@@ -128,9 +131,15 @@ class Syncer(Task[Repo]):
         except Error:
             raise Error("updating ref failed")
 
-    def update_submodules(self, repo: Repo) -> None:
+    def update_submodules(self, repo: Repo) -> str:
         repo_path = self.workspace_path / repo.dest
-        self.run_git(repo_path, "submodule", "update", "--init", "--recursive")
+        cmd = ("submodule", "update", "--init", "--recursive")
+        if self.parallel:
+            _, out = run_git_captured(repo_path, *cmd, check=True)
+            return out
+        else:
+            self.run_git(repo_path, *cmd)
+            return ""
 
     def sync_repo_to_branch(self, repo: Repo) -> List[str]:
         repo_path = self.workspace_path / repo.dest
