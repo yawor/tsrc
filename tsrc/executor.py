@@ -5,6 +5,7 @@
 import abc
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from threading import Lock
 from typing import Any, Dict, Generic, List, Optional, TypeVar
 
 import attr
@@ -169,6 +170,7 @@ class ParallelExecutor(Generic[T]):
         self.task = task
         self.num_jobs = num_jobs
         self.done_count = 0
+        self.lock = Lock()
 
     def process(self, items: List[T]) -> Dict[str, Outcome]:
         if not items:
@@ -194,8 +196,9 @@ class ParallelExecutor(Generic[T]):
     def process_item(self, index: int, count: int, item: T) -> Outcome:
         tokens = self.task.describe_process_start(item)
         if tokens:
-            erase_last_line()
-            ui.info_count(index, count, *tokens, end="\r")
+            with self.lock:
+                erase_last_line()
+                ui.info_count(index, count, *tokens, end="\r")
 
         result = self.task.process(index, count, item)
 
@@ -203,10 +206,11 @@ class ParallelExecutor(Generic[T]):
 
         tokens = self.task.describe_process_end(item)
         if tokens:
-            erase_last_line()
-            ui.info_count(self.done_count - 1, count, *tokens, end="\r")
-            if self.done_count == count:
-                ui.info()
+            with self.lock:
+                erase_last_line()
+                ui.info_count(self.done_count - 1, count, *tokens, end="\r")
+                if self.done_count == count:
+                    ui.info()
 
         return result
 
