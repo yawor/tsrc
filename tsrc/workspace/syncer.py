@@ -57,8 +57,8 @@ class Syncer(Task[Repo]):
         * or try merging the local branch with its upstream (abort if not
           on on the correct branch, or if the merge is not fast-forward).
         """
-        outcome = Outcome.empty()
         summary_lines = []
+        error = None
         self.info_count(index, count, "Synchronizing", repo.dest)
         self.fetch(repo)
         ref = None
@@ -75,15 +75,13 @@ class Syncer(Task[Repo]):
         else:
             self.info_3("Updating branch")
             error = self.check_branch(repo)
-            if error:
-                outcome.error = error
             sync_summary = self.sync_repo_to_branch(repo)
             if sync_summary:
                 summary_lines += sync_summary
 
         self.update_submodules(repo)
-        outcome.summary = "\n".join(summary_lines)
-        return outcome
+        summary = "\n".join(summary_lines)
+        return Outcome(error=error, summary=summary)
 
     def check_branch(self, repo: Repo) -> Optional[Error]:
         repo_path = self.workspace_path / repo.dest
