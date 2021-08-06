@@ -19,7 +19,7 @@ from tsrc.cli import (
 )
 from tsrc.cli.env_setter import EnvSetter
 from tsrc.errors import Error
-from tsrc.executor import Task, process_items
+from tsrc.executor import Outcome, Task, process_items
 from tsrc.repo import Repo
 from tsrc.workspace import Workspace
 
@@ -88,8 +88,8 @@ def run(args: argparse.Namespace) -> None:
     cmd_runner = CmdRunner(workspace.root_path, command, description, shell=shell)
     repos = workspace.repos
     ui.info_1(f"Running `{description}` on {len(repos)} repos")
-    outcome = process_items(repos, cmd_runner, num_jobs=num_jobs)
-    errors = outcome.errors
+    collection = process_items(repos, cmd_runner, num_jobs=num_jobs)
+    errors = collection.errors
     if errors:
         ui.error(f"Command failed for {len(errors)} repo(s)")
         if cmd_runner.parallel:
@@ -166,7 +166,7 @@ class CmdRunner(Task[Repo]):
     def describe_process_end(self, item: Repo) -> List[ui.Token]:
         return [ui.green, "ok", ui.reset, item.dest]
 
-    def process(self, index: int, count: int, repo: Repo) -> None:
+    def process(self, index: int, count: int, repo: Repo) -> Outcome:
         full_path = self.workspace_path / repo.dest
         if not full_path.exists():
             raise MissingRepo(repo.dest)
@@ -205,6 +205,7 @@ class CmdRunner(Task[Repo]):
                 )
             else:
                 raise CommandError()
+        return Outcome.empty()
 
 
 def die(message: str) -> None:

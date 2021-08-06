@@ -14,7 +14,7 @@ from tsrc.cli import (
     get_workspace_with_repos,
 )
 from tsrc.errors import MissingRepo
-from tsrc.executor import Task, process_items
+from tsrc.executor import Outcome, Task, process_items
 from tsrc.git import GitStatus, get_git_status
 from tsrc.manifest import Manifest
 from tsrc.repo import Repo
@@ -119,7 +119,7 @@ class StatusCollector(Task[Repo]):
     def describe_process_end(self, item: Repo) -> List[ui.Token]:
         return []
 
-    def process(self, index: int, count: int, repo: Repo) -> None:
+    def process(self, index: int, count: int, repo: Repo) -> Outcome:
         full_path = self.workspace.root_path / repo.dest
         self.info_count(index, count, repo.dest, end="\r")
         if not full_path.exists():
@@ -135,3 +135,4 @@ class StatusCollector(Task[Repo]):
             self.statuses[repo.dest] = e
         if not self.parallel:
             erase_last_line()
+        return Outcome.empty()

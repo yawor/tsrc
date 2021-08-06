@@ -5,7 +5,7 @@ from typing import List, Optional
 import cli_ui as ui
 
 from tsrc.errors import Error
-from tsrc.executor import Task
+from tsrc.executor import Outcome, Task
 from tsrc.repo import Remote, Repo
 
 
@@ -95,8 +95,9 @@ class Cloner(Task[Repo]):
             except Error:
                 raise Error("Resetting to", ref, "failed")
 
-    def process(self, index: int, count: int, repo: Repo) -> None:
+    def process(self, index: int, count: int, repo: Repo) -> Outcome:
         self.info_count(index, count, "Cloning", repo.dest)
         self.check_shallow_with_sha1(repo)
         self.clone_repo(repo)
         self.reset_repo(repo)
+        return Outcome.empty()

@@ -8,7 +8,7 @@ import cli_ui as ui
 import ruamel.yaml
 
 from tsrc.errors import Error
-from tsrc.executor import process_items, process_items_sequence
+from tsrc.executor import process_items
 from tsrc.manifest import Manifest
 from tsrc.repo import Repo
 from tsrc.workspace.cloner import Cloner
@@ -81,28 +81,18 @@ class Workspace:
             remote_name=self.config.singular_remote,
         )
         ui.info_2("Cloning missing repos")
-        outcome = process_items(to_clone, cloner, num_jobs=num_jobs)
-        errors = outcome.errors
-        if errors:
-            ui.error("Could not clone the following repos:")
-            for item, error in errors.items():
-                ui.info(ui.green, "*", ui.reset, item, ":", error)
-            raise ClonerError()
+        collection = process_items(to_clone, cloner, num_jobs=num_jobs)
+        collection.handle_result(error_message="Failed to clone the following repos")
 
     def set_remotes(self, num_jobs: Optional[int] = None) -> None:
-        if not self.config.singular_remote:
-            ui.info_2("Configuring remotes")
-            remote_setter = RemoteSetter(self.root_path)
-            outcome = process_items(self.repos, remote_setter, num_jobs=num_jobs)
-            errors = outcome.errors
-            if errors:
-                ui.error("Failed to configure remotes the following repos:")
-                for item, error in errors.items():
-                    ui.info(ui.green, "*", ui.reset, item, ":", error)
-                    raise RemoteSetterError()
-            summary = outcome.summary
-            for _, tokens in summary.items():
-                ui.info(*tokens)
+        if self.config.singular_remote:
+            return
+        ui.info_2("Configuring remotes")
+        remote_setter = RemoteSetter(self.root_path)
+        collection = process_items(self.repos, remote_setter, num_jobs=num_jobs)
+        collection.handle_result(
+            error_message="Failed to configure remotes for the following repos"
+        )
 
     def perform_filesystem_operations(
         self, manifest: Optional[Manifest] = None
@@ -116,13 +106,11 @@ class Workspace:
         operations = [x for x in operations if x.repo in known_repos]  # type: ignore
         if operations:
             ui.info_2("Performing filesystem operations")
-            outcome = process_items_sequence(operations, operator)
-            errors = outcome.errors
-            if errors:
-                ui.error("Failed to perform the following operations:")
-                for item, error in errors.items():
-                    ui.info(ui.green, "*", ui.reset, item, error)
-                raise FileSystemOperatorError()
+            # Not sure it's a good idea to have FileSystemOperations running in parallel
+            collection = process_items(operations, operator, num_jobs=None)
+            collection.handle_result(
+                error_message="Failed to perform the following file system operations"
+            )
 
     def sync(self, *, force: bool = False, num_jobs: Optional[int] = None) -> None:
         syncer = Syncer(
@@ -130,18 +118,11 @@ class Workspace:
         )
         repos = self.repos
         ui.info_2("Synchronizing repos")
-        outcome = process_items(repos, syncer, num_jobs=num_jobs)
-        summary = outcome.summary
-        for _, tokens in summary.items():
-            ui.info(*tokens)
-        errors = outcome.errors
-        if errors:
-            ui.error("Could not synchronize the following repos:")
-            for item, error in errors.items():
-                ui.info(ui.green, "*", ui.reset, item, ":", error)
-        syncer.display_bad_branches()
-        if errors:
-            raise SyncError()
+        collection = process_items(repos, syncer, num_jobs=num_jobs)
+        collection.handle_result(
+            summary_title="Updated repos:",
+            error_message="Failed to synchronize the following repos",
+        )
 
     def enumerate_repos(self) -> Iterable[Tuple[int, Repo, Path]]:
         """Yield (index, repo, full_path) for all the repos"""
@@ -151,10 +132,6 @@ class Workspace:
 
 
 class ClonerError(Error):
-    pass
-
-
-class SyncError(Error):
     pass
 
 

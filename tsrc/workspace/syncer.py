@@ -5,13 +5,16 @@ import attr
 import cli_ui as ui
 
 from tsrc.errors import Error
-from tsrc.executor import Task
+from tsrc.executor import Outcome, Task
 from tsrc.git import get_current_branch, get_git_status, run_git_captured
 from tsrc.repo import Remote, Repo
 
 
-class BadBranches(Error):
-    pass
+class IncorrectBranch(Error):
+    def __init__(self, *, actual: str, expected: str):
+        self.message = (
+            f"Current branch: '{actual}' does not match expected branch: '{expected}'"
+        )
 
 
 @attr.s(frozen=True)
@@ -43,7 +46,7 @@ class Syncer(Task[Repo]):
     def describe_process_end(self, item: Repo) -> List[ui.Token]:
         return [ui.green, "ok", ui.reset, item.dest]
 
-    def process(self, index: int, count: int, repo: Repo) -> List[ui.Token]:
+    def process(self, index: int, count: int, repo: Repo) -> Outcome:
         """Synchronize a repo given its configuration in the manifest.
 
         Always start by running `git fetch`, then either:
@@ -54,7 +57,8 @@ class Syncer(Task[Repo]):
         * or try merging the local branch with its upstream (abort if not
           on on the correct branch, or if the merge is not fast-forward).
         """
-        summary = []
+        outcome = Outcome.empty()
+        summary_lines = []
         self.info_count(index, count, "Synchronizing", repo.dest)
         self.fetch(repo)
         ref = None
@@ -67,17 +71,21 @@ class Syncer(Task[Repo]):
         if ref:
             self.info_3("Resetting to", ref)
             self.sync_repo_to_ref(repo, ref)
+            summary_lines.append(f"Reset to {ref}")
         else:
             self.info_3("Updating branch")
-            self.check_branch(repo)
+            error = self.check_branch(repo)
+            if error:
+                outcome.error = error
             sync_summary = self.sync_repo_to_branch(repo)
             if sync_summary:
-                summary += sync_summary
+                summary_lines += sync_summary
 
         self.update_submodules(repo)
-        return summary
+        outcome.summary = "\n".join(summary_lines)
+        return outcome
 
-    def check_branch(self, repo: Repo) -> None:
+    def check_branch(self, repo: Repo) -> Optional[Error]:
         repo_path = self.workspace_path / repo.dest
         current_branch = None
         try:
@@ -86,11 +94,9 @@ class Syncer(Task[Repo]):
             raise Error("Not on any branch")
 
         if current_branch and current_branch != repo.branch:
-            self.bad_branches.append(
-                RepoAtIncorrectBranchDescription(
-                    dest=repo.dest, actual=current_branch, expected=repo.branch
-                )
-            )
+            return IncorrectBranch(actual=current_branch, expected=repo.branch)
+        else:
+            return None
 
     def _pick_remotes(self, repo: Repo) -> List[Remote]:
         if self.remote_name:
@@ -128,35 +134,21 @@ class Syncer(Task[Repo]):
         repo_path = self.workspace_path / repo.dest
         self.run_git(repo_path, "submodule", "update", "--init", "--recursive")
 
-    def sync_repo_to_branch(self, repo: Repo) -> Optional[List[ui.Token]]:
+    def sync_repo_to_branch(self, repo: Repo) -> List[str]:
         repo_path = self.workspace_path / repo.dest
         if self.parallel:
             rc, out = run_git_captured(
                 repo_path, "log", "--oneline", "HEAD..@{upstream}", check=False
             )
             if rc == 0 and not out:
-                return None
+                return []
             _, out = run_git_captured(
                 repo_path, "merge", "--ff-only", "@{upstream}", check=True
             )
-            if not out.endswith("\n"):
-                out += "\n"
-            return [repo.dest + "\n" + "-" * len(repo.dest) + "\n", out]
+            return [repo.dest, "-" * len(repo.dest), out]
         else:
             try:
                 self.run_git(repo_path, "merge", "--ff-only", "@{upstream}")
             except Error:
                 raise Error("updating branch failed")
-            return None
-
-    def display_bad_branches(self) -> None:
-        if not self.bad_branches:
-            return
-        ui.error("Some projects were not on the correct branch")
-        headers = ("project", "actual", "expected")
-        data = [
-            ((ui.bold, x.dest), (ui.red, x.actual), (ui.green, x.expected))
-            for x in self.bad_branches
-        ]
-        ui.info_table(data, headers=headers)
-        raise BadBranches()
+            return []

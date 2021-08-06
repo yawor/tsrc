@@ -4,7 +4,7 @@ from typing import List
 import cli_ui as ui
 
 from tsrc.errors import Error
-from tsrc.executor import Task
+from tsrc.executor import Outcome, Task
 from tsrc.file_system import FileSystemOperation
 from tsrc.repo import Repo
 
@@ -28,12 +28,10 @@ class FileSystemOperator(Task[FileSystemOperation]):
     def describe_process_end(self, item: FileSystemOperation) -> List[ui.Token]:
         return []
 
-    def process(
-        self, index: int, count: int, item: FileSystemOperation
-    ) -> List[ui.Token]:
+    def process(self, index: int, count: int, item: FileSystemOperation) -> Outcome:
         self.info_count(index, count, str(item))
         try:
             item.perform(self.workspace_path)
         except OSError as e:
             raise Error(str(e))
-        return [item]
+        return Outcome.from_summary(str(item))

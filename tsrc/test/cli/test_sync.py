@@ -5,11 +5,11 @@ from typing import Any
 import ruamel.yaml
 from cli_ui.tests import MessageRecorder
 
+from tsrc.errors import Error
 from tsrc.git import get_sha1, run_git, run_git_captured
 from tsrc.groups import GroupNotFound
 from tsrc.test.helpers.cli import CLI
 from tsrc.test.helpers.git_server import GitServer
-from tsrc.workspace import SyncError
 from tsrc.workspace.config import WorkspaceConfig
 
 
@@ -81,7 +81,7 @@ def test_sync_with_errors(
     foo_src = workspace_path / "foo"
     (foo_src / "conflict.txt").write_text("this is green")
 
-    tsrc_cli.run_and_fail_with(SyncError, "sync")
+    tsrc_cli.run_and_fail_with(Error, "sync")
 
 
 def test_sync_finds_root(
@@ -183,7 +183,7 @@ def test_sync_not_on_master(
     tsrc_cli.run_and_fail("sync")
 
     assert (foo_path / "devel.txt").exists(), "foo should have been updated"
-    assert message_recorder.find("not on the correct branch")
+    assert message_recorder.find("does not match")
 
 
 def test_sync_with_force(
@@ -382,7 +382,7 @@ def test_changing_branch(
     git_server.manifest.set_repo_branch("foo", "next")
 
     tsrc_cli.run_and_fail("sync")
-    assert message_recorder.find("not on the correct branch")
+    assert message_recorder.find("does not match")
 
 
 def test_tags_are_not_updated(

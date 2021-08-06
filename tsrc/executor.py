@@ -21,6 +21,66 @@ class ExecutorFailed(Error):
     pass
 
 
+@attr.s
+class Outcome:
+    error: Optional[Error] = attr.ib()
+    summary: Optional[str] = attr.ib()
+
+    @classmethod
+    def empty(cls) -> "Outcome":
+        return cls(error=None, summary=None)
+
+    @classmethod
+    def from_error(cls, error: Error) -> "Outcome":
+        return cls(error=error, summary=None)
+
+    @classmethod
+    def from_summary(cls, message: str) -> "Outcome":
+        return cls(error=None, summary=message)
+
+    @classmethod
+    def from_lines(cls, lines: List[str]) -> "Outcome":
+        if lines:
+            message = "\n".join(lines)
+            return cls(error=None, summary=message)
+        else:
+            return cls.empty()
+
+    def success(self) -> bool:
+        return self.error is None
+
+
+class OutcomeCollection:
+    def __init__(self, outcomes: Dict[str, Outcome]) -> None:
+        self.summary = []
+        self.errors = {}
+        for item, outcome in outcomes.items():
+            if outcome.summary:
+                self.summary.append(outcome.summary)
+            if outcome.error:
+                self.errors[item] = outcome.error
+
+    def handle_result(
+        self, *, error_message: str, summary_title: Optional[str] = None
+    ) -> None:
+        if self.summary:
+            if summary_title:
+                ui.info(summary_title)
+            self.print_summary()
+        if self.errors:
+            ui.error(error_message)
+            self.print_errors()
+            raise ExecutorFailed
+
+    def print_summary(self) -> None:
+        for summary in self.summary:
+            ui.info(summary)
+
+    def print_errors(self) -> None:
+        for (item, error) in self.errors.items():
+            ui.info(ui.red, "*", ui.reset, item, ":", error)
+
+
 class Task(Generic[T], metaclass=abc.ABCMeta):
     """Represent an action to be performed."""
 
@@ -51,6 +111,7 @@ class Task(Generic[T], metaclass=abc.ABCMeta):
 
     @abc.abstractmethod
     def describe_item(self, item: T) -> str:
+        """Return a short description of the item"""
         pass
 
     @abc.abstractmethod
@@ -64,7 +125,7 @@ class Task(Generic[T], metaclass=abc.ABCMeta):
         pass
 
     @abc.abstractmethod
-    def process(self, index: int, count: int, item: T) -> Optional[List[ui.Token]]:
+    def process(self, index: int, count: int, item: T) -> Outcome:
         """
         Daughter classes should override this method to provide the code
         that processes the item.
@@ -72,18 +133,10 @@ class Task(Generic[T], metaclass=abc.ABCMeta):
         Instances can use self.parallel to know whether they are run
         in parallel with other instances.
 
-        Instances may return a short description of what happened as a string.
-
         Note: you should use self.info_* and self.run_git so that
         no output is produced when running tasks in parallel.
         """
         pass
-
-
-@attr.s
-class Outcome(Generic[T]):
-    errors: Dict[str, str] = attr.ib()
-    summary: Dict[str, List[ui.Token]] = attr.ib()
 
 
 class SequentialExecutor(Generic[T]):
@@ -94,18 +147,17 @@ class SequentialExecutor(Generic[T]):
     def __init__(self, task: Task[T]) -> None:
         self.task = task
 
-    # Collected errors as a list tuples: (item, caught_exception)
-    def process(self, items: List[T]) -> Outcome[T]:
-        errors = {}
+    def process(self, items: List[T]) -> Dict[str, Outcome]:
+        result = {}
         count = len(items)
         for index, item in enumerate(items):
+            item_desc = self.task.describe_item(item)
             try:
-                self.task.process(index, count, item)
-            except Error as error:
-                ui.error(error)
-                item_desc = self.task.describe_item(item)
-                errors[item_desc] = str(error)
-        return Outcome(errors=errors, summary={})
+                outcome = self.task.process(index, count, item)
+            except Error as e:
+                outcome = Outcome.from_error(e)
+            result[item_desc] = outcome
+        return result
 
 
 class ParallelExecutor(Generic[T]):
@@ -118,13 +170,12 @@ class ParallelExecutor(Generic[T]):
         self.num_jobs = num_jobs
         self.done_count = 0
 
-    def process(self, items: List[T]) -> Outcome:
+    def process(self, items: List[T]) -> Dict[str, Outcome]:
         if not items:
-            return Outcome(errors={}, summary={})
-        errors = {}
-        summary = {}
-        count = len(items)
+            return {}
+        result = {}
         with ThreadPoolExecutor(max_workers=self.num_jobs) as executor:
+            count = len(items)
             futures_to_item = {
                 executor.submit(self.process_item, index, count, item): item
                 for (index, item) in enumerate(items)
@@ -133,15 +184,14 @@ class ParallelExecutor(Generic[T]):
                 item = futures_to_item[future]
                 item_desc = self.task.describe_item(item)
                 try:
-                    result = future.result()
-                    if result:
-                        summary[item_desc] = result
-                except Error as error:
-                    errors[item_desc] = str(error)
+                    outcome = future.result()
+                except Error as e:
+                    outcome = Outcome.from_error(e)
+                result[item_desc] = outcome
         erase_last_line()
-        return Outcome(errors=errors, summary=summary)
+        return result
 
-    def process_item(self, index: int, count: int, item: T) -> Optional[List[ui.Token]]:
+    def process_item(self, index: int, count: int, item: T) -> Outcome:
         tokens = self.task.describe_process_start(item)
         if tokens:
             erase_last_line()
@@ -157,27 +207,29 @@ class ParallelExecutor(Generic[T]):
             ui.info_count(self.done_count - 1, count, *tokens, end="\r")
             if self.done_count == count:
                 ui.info()
+
         return result
 
 
 def process_items(
     items: List[T], task: Task[T], *, num_jobs: Optional[int] = None
-) -> Outcome[T]:
+) -> OutcomeCollection:
     if num_jobs:
-        return process_items_parallel(items, task, num_jobs=num_jobs)
+        res = process_items_parallel(items, task, num_jobs=num_jobs)
     else:
-        return process_items_sequence(items, task)
+        res = process_items_sequence(items, task)
+    return OutcomeCollection(res)
 
 
 def process_items_parallel(
     items: List[T], task: Task[T], *, num_jobs: int
-) -> Outcome[T]:
+) -> Dict[str, Outcome]:
     task.parallel = True
     executor = ParallelExecutor(task, num_jobs=num_jobs)
     return executor.process(items)
 
 
-def process_items_sequence(items: List[T], task: Task[T]) -> Outcome[T]:
+def process_items_sequence(items: List[T], task: Task[T]) -> Dict[str, Outcome]:
     task.parallel = False
     executor = SequentialExecutor(task)
     return executor.process(items)
