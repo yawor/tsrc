@@ -119,16 +119,25 @@ class Workspace:
         repos = self.repos
         ui.info_2("Synchronizing repos")
         collection = process_items(repos, syncer, num_jobs=num_jobs)
-        collection.handle_result(
-            summary_title="Updated repos:",
-            error_message="Failed to synchronize the following repos",
-        )
+        if collection.summary:
+            ui.info_2("Updated repos:")
+            for summary in collection.summary:
+                if summary:
+                    ui.info(summary)
+        if collection.errors:
+            ui.error("Failed to synchronize the following repos:")
+            collection.print_errors()
+            raise SyncError
 
     def enumerate_repos(self) -> Iterable[Tuple[int, Repo, Path]]:
         """Yield (index, repo, full_path) for all the repos"""
         for i, repo in enumerate(self.repos):
             full_path = self.root_path / repo.dest
             yield (i, repo, full_path)
+
+
+class SyncError(Error):
+    pass
 
 
 class ClonerError(Error):

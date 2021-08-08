@@ -61,12 +61,8 @@ class OutcomeCollection:
             if outcome.error:
                 self.errors[item] = outcome.error
 
-    def handle_result(
-        self, *, error_message: str, summary_title: Optional[str] = None
-    ) -> None:
+    def handle_result(self, *, error_message: str) -> None:
         if self.summary:
-            if summary_title:
-                ui.info(summary_title)
             self.print_summary()
         if self.errors:
             ui.error(error_message)
@@ -156,6 +152,7 @@ class SequentialExecutor(Generic[T]):
             try:
                 outcome = self.task.process(index, count, item)
             except Error as e:
+                ui.error(e)
                 outcome = Outcome.from_error(e)
             result[item_desc] = outcome
         return result

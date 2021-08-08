@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import attr
 import cli_ui as ui
@@ -74,8 +74,8 @@ class Syncer(Task[Repo]):
             summary_lines.append(f"Reset to {ref}")
         else:
             self.info_3("Updating branch")
-            error = self.check_branch(repo)
-            sync_summary = self.sync_repo_to_branch(repo)
+            error, current_branch = self.check_branch(repo)
+            sync_summary = self.sync_repo_to_branch(repo, current_branch=current_branch)
             if sync_summary:
                 summary_lines += sync_summary
 
@@ -86,7 +86,7 @@ class Syncer(Task[Repo]):
         summary = "\n".join(summary_lines)
         return Outcome(error=error, summary=summary)
 
-    def check_branch(self, repo: Repo) -> Optional[Error]:
+    def check_branch(self, repo: Repo) -> Tuple[Optional[Error], str]:
         repo_path = self.workspace_path / repo.dest
         current_branch = None
         try:
@@ -95,9 +95,12 @@ class Syncer(Task[Repo]):
             raise Error("Not on any branch")
 
         if current_branch and current_branch != repo.branch:
-            return IncorrectBranch(actual=current_branch, expected=repo.branch)
+            return (
+                IncorrectBranch(actual=current_branch, expected=repo.branch),
+                current_branch,
+            )
         else:
-            return None
+            return None, current_branch
 
     def _pick_remotes(self, repo: Repo) -> List[Remote]:
         if self.remote_name:
@@ -125,7 +128,7 @@ class Syncer(Task[Repo]):
         repo_path = self.workspace_path / repo.dest
         status = get_git_status(repo_path)
         if status.dirty:
-            raise Error(f"{repo_path} is dirty, skipping")
+            raise Error(f"git repo is dirty: cannot sync to ref: {ref}")
         try:
             self.run_git(repo_path, "reset", "--hard", ref)
         except Error:
@@ -141,7 +144,7 @@ class Syncer(Task[Repo]):
             self.run_git(repo_path, *cmd)
             return ""
 
-    def sync_repo_to_branch(self, repo: Repo) -> List[str]:
+    def sync_repo_to_branch(self, repo: Repo, *, current_branch: str) -> List[str]:
         repo_path = self.workspace_path / repo.dest
         if self.parallel:
             rc, out = run_git_captured(
@@ -152,7 +155,8 @@ class Syncer(Task[Repo]):
             _, out = run_git_captured(
                 repo_path, "merge", "--ff-only", "@{upstream}", check=True
             )
-            return [repo.dest, "-" * len(repo.dest), out]
+            title = f"{repo.dest} (on {current_branch})"
+            return [title, "-" * len(title), out + "\n"]
         else:
             try:
                 self.run_git(repo_path, "merge", "--ff-only", "@{upstream}")
